@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 from typing import List
 from torch import Tensor
-from utils import get_positionals
 
 
 class SpeakerModule(nn.Module):
@@ -60,7 +59,6 @@ class MHSA(nn.Module):
             ) -> None:
         super().__init__()
         assert d_model % dk == 0, 'd_model is not divisible by dk'
-        self.d_model = d_model
         self.fc_key = nn.Linear(
             in_features=d_model,
             out_features=d_model,
@@ -73,14 +71,12 @@ class MHSA(nn.Module):
             in_features=d_model,
             out_features=d_model,
         )
-        self.lnorm = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(p_dropout)
         self.d_model = d_model
         self.dk = dk
         self.sqrt_dk = math.sqrt(dk)
         self.h = d_model // dk
         self.softmax = nn.Softmax(dim=-1)
-        self.device = device
 
     def _key_query_matmul(self, Q: Tensor, K: Tensor) -> Tensor:
         """Performs the Matmul operation in
@@ -144,7 +140,7 @@ class MHSA(nn.Module):
             for item in args
         ]
 
-    def forward(self, inp: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """Passes the input into multi-head attention
         Args:
             inp (Tensor): The input tensor
@@ -152,17 +148,13 @@ class MHSA(nn.Module):
             Tensor: The result after adding it to positionals
             and passing it through multi-head self-attention
         """
-        out = self.lnorm(inp)
-        K = self.fc_key(out)
-        Q = self.fc_query(out)
-        V = self.fc_value(out)
-        max_length = inp.shape[1]
-        positionals = get_positionals(max_length, self.d_model).to(self.device)
-        out = out + positionals
+        K = self.fc_key(x)
+        Q = self.fc_query(x)
+        V = self.fc_value(x)
         (Q, K, V) = self._reshape(Q, K, V)
         out = self.perform_self_att(Q, K, V)
         out = self.dropout(out)
-        return inp + out
+        return out
 
 
 class FeedForward(nn.Module):
