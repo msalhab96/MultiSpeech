@@ -163,3 +163,28 @@ class MHSA(nn.Module):
         out = self.perform_self_att(Q, K, V)
         out = self.dropout(out)
         return inp + out
+
+
+class FeedForward(nn.Module):
+    def __init__(
+            self,
+            d_model: int,
+            hidden_size: int,
+            p_dropout: float
+            ) -> None:
+        super().__init__()
+        self.fc1 = nn.Linear(
+            in_features=d_model,
+            out_features=hidden_size
+        )
+        self.fc2 = nn.Linear(
+            in_features=hidden_size,
+            out_features=d_model
+        )
+        self.dropout = nn.Dropout(p=p_dropout)
+
+    def forward(self, x: Tensor) -> Tensor:
+        out = self.fc1(x)
+        out = self.fc2(out)
+        out = self.dropout(out)
+        return out
