@@ -48,14 +48,12 @@ class MHSA(nn.Module):
         d_model (int): The model dimensionality.
         dk (int): The size of each head.
         p_dropout (float): The dropout ratio.
-        device (str): The device to map the tensors to.
     """
     def __init__(
             self,
             d_model: int,
             dk: int,
-            p_dropout: float,
-            device: str
+            p_dropout: float
             ) -> None:
         super().__init__()
         assert d_model % dk == 0, 'd_model is not divisible by dk'
@@ -158,6 +156,14 @@ class MHSA(nn.Module):
 
 
 class FeedForward(nn.Module):
+    """Implements the feedforward Module in the model, where the input is
+    scaled to a hidden_size and then back to the d_model.
+
+    Args:
+        d_model (int): The model dimensionality.
+        hidden_size (int): the hidden size of the module.
+        p_dropout (float): The dropout ratio.
+    """
     def __init__(
             self,
             d_model: int,
@@ -180,3 +186,18 @@ class FeedForward(nn.Module):
         out = self.fc2(out)
         out = self.dropout(out)
         return out
+
+
+class AddAndNorm(nn.Module):
+    """Implements the Add & Norm module where the input of the last module
+    and the output of the last module added and then fed to Layernorm
+
+    Args:
+        d_model (int): The model dimensionality.
+    """
+    def __init__(self, d_model: int) -> None:
+        super().__init__()
+        self.lnrom = nn.LayerNorm(d_model)
+
+    def forward(self, x: Tensor, out: Tensor):
+        return self.lnrom(x + out)
