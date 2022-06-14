@@ -201,3 +201,57 @@ class AddAndNorm(nn.Module):
 
     def forward(self, x: Tensor, out: Tensor):
         return self.lnrom(x + out)
+
+
+class Encoder(nn.Module):
+    """Implements the basic unit of the encoder and it contains the below:
+        - multi-head self attention layer.
+        - feed forward layer.
+        - Residual add and layer normalization after each of the above.
+
+    Args:
+        d_model (int): The model dimensionality.
+        dk (int): The size of each head.
+        hidden_size (int): the hidden size of the feed forward module.
+        p_dropout (float): The dropout ratio.
+    """
+    def __init__(
+            self,
+            d_model: int,
+            dk: int,
+            hidden_size: int,
+            p_dopout: float
+            ) -> None:
+        super().__init__()
+        self.mhsa = MHSA(
+            d_model=d_model,
+            dk=dk,
+            p_dropout=p_dopout
+            )
+        self.mhsa_add_and_norm = AddAndNorm(
+            d_model=d_model
+            )
+        self.ff = FeedForward(
+            d_model=d_model,
+            hidden_size=hidden_size,
+            p_dropout=p_dopout
+        )
+        self.ff_add_and_norm = AddAndNorm(
+            d_model=d_model
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        """Given the input of shape [B, M, d] performs self attention
+        on the input and return back the result of shape [B, M, d]
+
+        Args:
+            x (Tensor): The input of shape [B, M, d]
+
+        Returns:
+            Tensor: The result out of the self attention of shape [B, M, d]
+        """
+        out = self.mhsa(x)
+        out = self.mhsa_add_and_norm(x, out)
+        ff_out = self.ff(out)
+        out = self.ff_add_and_norm(out, ff_out)
+        return out
