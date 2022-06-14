@@ -306,3 +306,39 @@ class PositionalEmbedding(nn.Module):
         pos = get_positionals(max_length, self.d_model).to(self.device)
         out = pos + out
         return out
+
+
+class DecoderPrenet(nn.Module):
+    def __init__(
+            self,
+            inp_size: int,
+            bottleneck_size: int,
+            d_model: int,
+            p_dropout: float
+            ) -> None:
+        super().__init__()
+        self.fc1 = nn.Linear(
+            in_features=inp_size,
+            out_features=bottleneck_size
+            )
+        self.dropout = nn.Dropout(p_dropout)
+        self.relu = nn.ReLU()
+        self.fc2 = nn.Linear(
+            in_features=bottleneck_size,
+            out_features=bottleneck_size
+            )
+        self.fc3 = nn.Linear(
+            in_features=bottleneck_size,
+            out_features=d_model
+            )
+
+    def forward(self, x: Tensor):
+        out = self.fc1(x)
+        out = self.relu(out)
+        out = self.dropout(out)
+        out = self.fc2(out)
+        out = self.relu(out)
+        out = self.dropout(out)
+        out = self.fc3(out)
+        out = self.relu(out)
+        return out
