@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 from typing import List
 from torch import Tensor
+from utils import get_positionals
 
 
 class SpeakerModule(nn.Module):
@@ -254,4 +255,54 @@ class Encoder(nn.Module):
         out = self.mhsa_add_and_norm(x, out)
         ff_out = self.ff(out)
         out = self.ff_add_and_norm(out, ff_out)
+        return out
+
+
+class PositionalEmbedding(nn.Module):
+    """Implemnts the Positional Embedding of the encoder.
+
+    Args:
+        d_model (int): The model dimensionality.
+        vocab_size (int): The vocabulary size to be used in the
+        embedding layer.
+        pad_idx (int): The padding index.
+        device (str): The device to map the tensors to.
+        add_lnorm (int): A flag to either use a leyer norm or not.
+    """
+    def __init__(
+            self,
+            d_model: int,
+            vocab_size: int,
+            pad_idx: int,
+            device: str,
+            add_lnorm: bool
+            ) -> None:
+        super().__init__()
+        self.d_model = d_model
+        self.embedding = nn.Embedding(
+            num_embeddings=vocab_size,
+            embedding_dim=d_model,
+            padding_idx=pad_idx
+            )
+        self.device = device
+        self.add_lnorm = add_lnorm
+        if add_lnorm is True:
+            self.lnorm = nn.LayerNorm(d_model)
+
+    def forward(self, x: Tensor) -> Tensor:
+        """Given the sequences input of shape [B, M]
+        returns the positional embedding for each sequence.
+
+        Args:
+            x (Tensor): The input sequence of shape [B, M]
+
+        Returns:
+            Tensor: The positional embedding of shape [B, M, d]
+        """
+        max_length = x.shape[1]
+        out = self.embedding(x)
+        if self.add_lnorm is True:
+            out = self.lnorm(out)
+        pos = get_positionals(max_length, self.d_model).to(self.device)
+        out = pos + out
         return out
