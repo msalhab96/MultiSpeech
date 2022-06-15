@@ -42,7 +42,7 @@ class SpeakerModule(nn.Module):
         return out
 
 
-class MHA(nn.Module):
+class MultiHeadAtt(nn.Module):
     """Implements the multi-head attention module
 
     Args:
@@ -245,21 +245,21 @@ class Encoder(nn.Module):
 
     Args:
         d_model (int): The model dimensionality.
-        dk (int): The size of each head.
+        dk (int): The number of heads.
         hidden_size (int): the hidden size of the feed forward module.
         p_dropout (float): The dropout ratio.
     """
     def __init__(
             self,
             d_model: int,
-            dk: int,
+            h: int,
             hidden_size: int,
             p_dopout: float
             ) -> None:
         super().__init__()
-        self.mhsa = MHSA(
+        self.mhsa = MultiHeadAtt(
             d_model=d_model,
-            dk=dk,
+            h=h,
             p_dropout=p_dopout
             )
         self.mhsa_add_and_norm = AddAndNorm(
@@ -284,7 +284,7 @@ class Encoder(nn.Module):
         Returns:
             Tensor: The result out of the self attention of shape [B, M, d]
         """
-        out = self.mhsa(x)
+        out = self.mhsa(x, x, x)
         out = self.mhsa_add_and_norm(x, out)
         ff_out = self.ff(out)
         out = self.ff_add_and_norm(out, ff_out)
