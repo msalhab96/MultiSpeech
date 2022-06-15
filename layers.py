@@ -1,7 +1,7 @@
 import math
 import torch
 import torch.nn as nn
-from typing import List
+from typing import List, Tuple
 from torch import Tensor
 from utils import get_positionals
 
@@ -42,22 +42,22 @@ class SpeakerModule(nn.Module):
         return out
 
 
-class MHSA(nn.Module):
-    """Implements the multi-head self attention module
+class MHA(nn.Module):
+    """Implements the multi-head attention module
 
     Args:
         d_model (int): The model dimensionality.
-        dk (int): The size of each head.
+        h (int): The number of heads.
         p_dropout (float): The dropout ratio.
     """
     def __init__(
             self,
             d_model: int,
-            dk: int,
+            h: int,
             p_dropout: float
             ) -> None:
         super().__init__()
-        assert d_model % dk == 0, 'd_model is not divisible by dk'
+        assert d_model % h == 0, 'd_model is not divisible by h'
         self.fc_key = nn.Linear(
             in_features=d_model,
             out_features=d_model,
@@ -70,24 +70,16 @@ class MHSA(nn.Module):
             in_features=d_model,
             out_features=d_model,
         )
+        self.proj_fc = nn.Linear(
+            in_features=2 * d_model,
+            out_features=d_model,
+        )
         self.dropout = nn.Dropout(p_dropout)
         self.d_model = d_model
-        self.dk = dk
-        self.sqrt_dk = math.sqrt(dk)
-        self.h = d_model // dk
+        self.h = h
+        self.dk = d_model // h
+        self.sqrt_dk = math.sqrt(self.dk)
         self.softmax = nn.Softmax(dim=-1)
-
-    def _key_query_matmul(self, Q: Tensor, K: Tensor) -> Tensor:
-        """Performs the Matmul operation in
-        scaled Dot-Product Attention
-        Args:
-            Q (Tensor): The Query tensor of shape [B, M, dk, h]
-            K (Tensor): The Key tensor of shape [B, M, dk, h]
-        Returns:
-            Tensor: The result of matmul operation of shape
-            [B, M, dk, dk]
-        """
-        return torch.matmul(Q, K.permute(0, 1, 3, 2))
 
     def _get_scaled_att(
             self,
@@ -97,63 +89,104 @@ class MHSA(nn.Module):
         """Calculates the scaled attention map
         by calculating softmax(matmul(Q, K.T)/sqrt(dk))
         Args:
-            Q (Tensor): The Query tensor of shape [B, M, dk, h]
-            K (Tensor): The Key tensor of shape [B, M, dk, h]
+            Q (Tensor): The Query tensor of shape [h * B, Tq, dk]
+            K (Tensor): The Key tensor of shape [h * B, dk, Tk]
         Returns:
-            Tensor: The scaled attention map of shape
-            [B, M, dk, dk]
+            Tensor: The scaled attention weights of shape
+            [B * h, Tq, Tk]
         """
-        result = self._key_query_matmul(Q, K)
+        result = torch.matmul(Q, K)
         result = result / self.sqrt_dk
         return self.softmax(result)
 
-    def perform_self_att(
+    def perform_att(
             self,
             Q: Tensor,
             K: Tensor,
             V: Tensor
             ) -> Tensor:
-        """Perform multi head scaled attention
+        """Performs multi-head scaled attention
         by calculating softmax(matmul(Q, K.T)/sqrt(dk)).V
         Args:
-            Q (Tensor): The Query tensor of shape [B, M, dk, h]
-            K (Tensor): The Key tensor of shape [B, M, dk, h]
-            V (Tensor): The Value tensor of shape [B, M, dk, h]
+            Q (Tensor): The Query tensor of shape [h * B, Tq, dk]
+            K (Tensor): The Key tensor of shape [h * B, dk, Tk]
+            V (Tensor): The Value tensor of shape [h * B, Tk, dk]
         Returns:
-            Tensor: The scaled attention map of shape
-            [B, M, dk * h]
+            Tuple[Tensor, Tensor]: The attention matrix of shape
+            [B * h, Tq, Tk] and the scaled attention value of
+            shape [B * h, Tq, dk].
         """
-        (b, m, *_) = Q.shape
         att = self._get_scaled_att(Q, K)
         result = torch.matmul(att, V)
-        return result.view(b, m, -1)
+        return att, result
 
     def _reshape(self, *args) -> List[Tensor]:
         """Reshabes all the given list of tensor
-        from [B, M, N] to [B, M, dk, h]
+        from [B, T, N] to [B, T, h, dk]
         Returns:
             List[Tensor]: list of all reshaped tensors
         """
         return [
-            item.view(-1, item.shape[1], self.dk, self.h)
+            item.contiguous().view(-1, item.shape[1], self.h, self.dk)
             for item in args
         ]
 
-    def forward(self, x: Tensor) -> Tensor:
-        """Passes the input into multi-head attention
-        Args:
-            inp (Tensor): The input tensor
+    def _pre_permute(self, *args) -> List[Tensor]:
+        """Permutes all the given list of tensors
+        from [B, T, h, dk] to become [h, B, T, dk].
+
         Returns:
-            Tensor: The result after adding it to positionals
-            and passing it through multi-head self-attention
+            List[Tensor]: List of all permuted tensors.
         """
-        K = self.fc_key(x)
-        Q = self.fc_query(x)
-        V = self.fc_value(x)
-        (Q, K, V) = self._reshape(Q, K, V)
-        out = self.perform_self_att(Q, K, V)
-        out = self.dropout(out)
-        return out
+        return [
+            item.permute(2, 0, 1, 3)
+            for item in args
+        ]
+
+    def _change_dim(self, *args) -> List[Tensor]:
+        """Changes the dimensionality of all passed tensores
+        from [B, T, N] to [B * h, T, dk]
+
+        Returns:
+            List[Tensor]: List of the modified tensors.
+        """
+        result = self._reshape(*args)  # [B, T, h, dk]
+        result = self._pre_permute(*result)  # [h, B, T, dk]
+        return [
+            item.contiguous().view(-1, item.shape[2], item.shape[3])
+            for item in result
+        ]
+
+    def forward(
+            self,
+            key: Tensor,
+            query: Tensor,
+            value: Tensor
+            ) -> Tuple[Tensor, Tensor]:
+        """Performs multi-head attention on the provided key, query and value
+        Args:
+            key (Tensor): The key tensor of shape [B, Mt, d_model]
+            query (Tensor): The query tensor of shape [B, Ms, d_model]
+            value (Tensor): The value tensor of shape [B, Mt, d_model]
+        Returns:
+            Tuple[Tensor, Tensor]: A tuple of the attention matrix and the
+            results after performing multi-head attention where the first of
+            shape [h, B, Ms, Mt] and the second of shape [B, Tq, d_model].
+        """
+        [b, s, _] = query.shape
+        K = self.fc_key(key)
+        Q = self.fc_query(query)
+        V = self.fc_value(value)
+        (Q, K, V) = self._change_dim(Q, K, V)  # [h * B, T, dk]
+        K = K.permute(0, 2, 1)  # [h, T, B, dk]
+        att, result = self.perform_att(Q, K, V)
+        result = result.view(self.h, b, s, self.dk)
+        result = result.permute(1, 2, 0, 3)
+        result = result.contiguous().view(b, s, -1)
+        result = torch.cat([query, result], dim=-1)
+        result = self.proj_fc(result)
+        out = self.dropout(result)
+        return att, out
 
 
 class FeedForward(nn.Module):
