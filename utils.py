@@ -20,3 +20,17 @@ def get_positionals(max_length: int, d_model: int) -> Tensor:
             result[pos, i] = math.sin(pos / denominator)
             result[pos, i + 1] = math.cos(pos / denominator)
     return result
+
+
+def cat_speaker_emb(speaker_emb: Tensor, x: Tensor) -> Tensor:
+    """Concat the speaker embedding to the prenet/encoder results.
+
+    Args:
+        speaker_emb (Tensor): The speaker embedding of dimension [B, 1, E]
+        x (Tensor): The results to be concatenated with of shape [B, M, E]
+
+    Returns:
+        Tensor: The concatenated speaker embedding with the input x of of shape
+        [B, M + 1, E]
+    """
+    return torch.cat([speaker_emb, x], dim=1)
