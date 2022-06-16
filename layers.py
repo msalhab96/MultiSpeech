@@ -342,6 +342,7 @@ class PositionalEmbedding(nn.Module):
 
 
 class DecoderPrenet(nn.Module):
+    # TODO: add docstring
     def __init__(
             self,
             inp_size: int,
@@ -375,3 +376,81 @@ class DecoderPrenet(nn.Module):
         out = self.fc3(out)
         out = self.relu(out)
         return out
+
+
+class SlidingAttention(nn.Module):
+    # TODO: add docstring
+    def __init__(self, left_shift: int, right_shift: int) -> None:
+        super().__init__()
+        self.left_shift = left_shift
+        self.right_shift = right_shift
+        self.window_size = self.right_shift - self.left_shift + 1
+
+    def _get_range_matrix(self, center: Tensor):
+        length = center.shape[0]
+        range_matrix = torch.zeros(
+            length, self.window_size, dtype=torch.int64
+            )
+        range_matrix[:, 0] = torch.max(
+            center + self.left_shift, range_matrix[:, 0]
+            )
+        for i in range(self.window_size - 1):
+            range_matrix[:, i + 1] = range_matrix[:, i] + 1
+        return range_matrix
+
+    def _govern_max_len(self, max_size: int, indices: Tensor):
+        batch_size = indices.shape[0]
+        return torch.min(
+            indices,
+            torch.ones(batch_size, dtype=torch.int64) * max_size
+            )
+
+    def _govern_center(self, center: Tensor, updated_center: Tensor):
+        mask = (updated_center - center) >= 3
+        return ~mask * updated_center + mask * (center + 1)
+
+    def _slice_range_matrix(self, range_matrix: Tensor, idx: int):
+        return range_matrix[:, idx]
+
+    def _slice_from_values(self, indices: Tensor, values: Tensor):
+        [batch_size, _, d_model] = values.shape
+        indices = torch.unsqueeze(indices, dim=1)
+        indices = indices.repeat(1, d_model).view(batch_size, 1, d_model)
+        return torch.gather(values, 1, indices)
+
+    def _get_values(
+            self,
+            values: Tensor,
+            range_matrix: Tensor,
+            ):
+        [batch_size, max_length, d_model] = values.shape
+        slice = torch.zeros(
+            batch_size, self.window_size, d_model, dtype=torch.int64
+            )
+        for i in range(self.window_size):
+            indices = self._slice_range_matrix(range_matrix, i)
+            indices = self._govern_max_len(max_length - 1, indices)
+            slice[0:, i:i+1, 0:] = self._slice_from_values(indices, values)
+        return slice
+
+    def _calc_att(self, sliced_value: Tensor, key: Tensor):
+        # TODO: replace it with MHA
+        sliced_value = sliced_value.permute(0, 2, 1)
+        att = torch.matmul(key, sliced_value)
+        result = torch.matmul(att, sliced_value.permute(0, 2, 1))
+        return result
+
+    def _update_center(self, range_matrix: Tensor, att: Tensor):
+        # TODO: Validate this function
+        new_center = range_matrix * att
+        new_center = torch.sum(new_center, dim=-1)
+        new_center = torch.floor(new_center).to(torch.int)
+        return new_center
+
+    def forward(self, key, values: Tensor, center: Tensor):
+        # TODO: Merge it with MHA
+        range_matrix = self._get_range_matrix(center)
+        win_vals = self._get_values(values, range_matrix)
+        att = self._calc_att(key, win_vals)
+        center = self._update_center(range_matrix, att)
+        return att, center
