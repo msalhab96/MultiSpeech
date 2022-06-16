@@ -378,15 +378,45 @@ class DecoderPrenet(nn.Module):
         return out
 
 
-class SlidingAttention(nn.Module):
-    # TODO: add docstring
-    def __init__(self, left_shift: int, right_shift: int) -> None:
+class MultiHeadSlidingAtt(nn.Module):
+    """Implements The Multi-head with attention sliding window.
+
+    Args:
+        left_shift (int): The window size below the center.
+        right_shift (int): The window size beyond the center.
+        max_steps (int): The maximum step allowed for the window to take.
+        d_model (int): The model dimensionality.
+        h (int): The number of heads.
+        p_dropout (float): The dropout ratio.
+    """
+    def __init__(
+            self,
+            left_shift: int,
+            right_shift: int,
+            max_steps: int,
+            d_model: int,
+            h: int,
+            p_dropout: float
+            ) -> None:
         super().__init__()
         self.left_shift = left_shift
         self.right_shift = right_shift
         self.window_size = self.right_shift - self.left_shift + 1
+        self.max_steps = max_steps
+        self.mha = MultiHeadAtt(
+            d_model=d_model, h=h, p_dropout=p_dropout
+            )
 
-    def _get_range_matrix(self, center: Tensor):
+    def _get_range_matrix(self, center: Tensor) -> Tensor:
+        """Given the cneter vector, returns the range matrix that has
+        all the possible indices in the attention window.
+
+        Args:
+            center (Tensor): The center Tensor of shape [B,]
+
+        Returns:
+            Tensor: The range matrix of shape [B, win_size]
+        """
         length = center.shape[0]
         range_matrix = torch.zeros(
             length, self.window_size, dtype=torch.int64
@@ -398,21 +428,31 @@ class SlidingAttention(nn.Module):
             range_matrix[:, i + 1] = range_matrix[:, i] + 1
         return range_matrix
 
-    def _govern_max_len(self, max_size: int, indices: Tensor):
+    def _govern_max_len(self, max_size: int, indices: Tensor) -> Tensor:
         batch_size = indices.shape[0]
         return torch.min(
             indices,
             torch.ones(batch_size, dtype=torch.int64) * max_size
             )
 
-    def _govern_center(self, center: Tensor, updated_center: Tensor):
-        mask = (updated_center - center) >= 3
+    def _govern_center(self, center: Tensor, updated_center: Tensor) -> Tensor:
+        """Controls how fast the center moves, as mentioned in the paper
+        we clip any movement greater than the max_steps.
+
+        Args:
+            center (Tensor): The center vector of shape [B, ]
+            updated_center (Tensor): The new calculated center of shape [B, ]
+
+        Returns:
+            Tensor: The new updated center of shape [B, ]
+        """
+        mask = (updated_center - center) >= self.max_steps
         return ~mask * updated_center + mask * (center + 1)
 
-    def _slice_range_matrix(self, range_matrix: Tensor, idx: int):
+    def _slice_range_matrix(self, range_matrix: Tensor, idx: int) -> Tensor:
         return range_matrix[:, idx]
 
-    def _slice_from_values(self, indices: Tensor, values: Tensor):
+    def _slice_from_values(self, indices: Tensor, values: Tensor) -> Tensor:
         [batch_size, _, d_model] = values.shape
         indices = torch.unsqueeze(indices, dim=1)
         indices = indices.repeat(1, d_model).view(batch_size, 1, d_model)
@@ -422,10 +462,20 @@ class SlidingAttention(nn.Module):
             self,
             values: Tensor,
             range_matrix: Tensor,
-            ):
+            ) -> Tensor:
+        """Given the values matrix (from the encoder) and the range matrix
+        returns all the targeted indices in the range matrix.
+
+        Args:
+            values (Tensor): The values matrix of shape [B, Tt, d_model]
+            range_matrix (Tensor): The range matrix of shape [B, win_size]
+
+        Returns:
+            Tensor: The sliced values of shape [B, win_size, d_model]
+        """
         [batch_size, max_length, d_model] = values.shape
         slice = torch.zeros(
-            batch_size, self.window_size, d_model, dtype=torch.int64
+            batch_size, self.window_size, d_model
             )
         for i in range(self.window_size):
             indices = self._slice_range_matrix(range_matrix, i)
@@ -433,24 +483,47 @@ class SlidingAttention(nn.Module):
             slice[0:, i:i+1, 0:] = self._slice_from_values(indices, values)
         return slice
 
-    def _calc_att(self, sliced_value: Tensor, key: Tensor):
-        # TODO: replace it with MHA
-        sliced_value = sliced_value.permute(0, 2, 1)
-        att = torch.matmul(key, sliced_value)
-        result = torch.matmul(att, sliced_value.permute(0, 2, 1))
-        return result
+    def _update_center(self, range_matrix: Tensor, att: Tensor) -> Tensor:
+        """Given the range matrix and the att matrix, updates the center
+        vector by calculating floor(range * att) as mentioned in the paper.
 
-    def _update_center(self, range_matrix: Tensor, att: Tensor):
-        # TODO: Validate this function
+        Args:
+            range_matrix (Tensor): The range matrix of shape [B, window_size].
+            att (Tensor): The resulted attention matrix of shape
+            [B * h, Ts, window_size].
+
+        Returns:
+            Tensor: The updated center vector.
+        """
+        att = att[:, -1, :]  # The last one of Ts, [B, 1, win_size]
+        print(att.shape)
+        [bh, ws] = att.shape
+        att = att.view(self.mha.h, bh // self.mha.h, ws)  # [h, B, win_size]
+        att = att.sum(dim=0)  # [B, win_size]
         new_center = range_matrix * att
-        new_center = torch.sum(new_center, dim=-1)
+        new_center = torch.sum(new_center, dim=-1)  # [B,]
+        new_center = new_center / self.mha.h
         new_center = torch.floor(new_center).to(torch.int)
+        print(new_center)
         return new_center
 
-    def forward(self, key, values: Tensor, center: Tensor):
-        # TODO: Merge it with MHA
+    def forward(
+            self, query: Tensor, values: Tensor, center: Tensor
+            ) -> Tuple[Tensor, Tensor, Tensor]:
+        """Performs sliding attention.
+
+        Args:
+            query (Tensor): The query tensor of shape [B, Tq, d_model]
+            values (Tensor): The values tensor of shape [B, Tk, d_model]
+            center (Tensor): The latest center values of shape [B,]
+
+        Returns:
+            Tuple[Tensor, Tensor]: The attention wieghts The result of the
+            attention and the updated center.
+        """
         range_matrix = self._get_range_matrix(center)
         win_vals = self._get_values(values, range_matrix)
-        att = self._calc_att(key, win_vals)
+        att, out = self.mha(key=win_vals, query=query, value=win_vals)
+        print(att.shape)
         center = self._update_center(range_matrix, att)
-        return att, center
+        return att, out, center
