@@ -527,3 +527,86 @@ class MultiHeadSlidingAtt(nn.Module):
         print(att.shape)
         center = self._update_center(range_matrix, att)
         return att, out, center
+
+
+class Decoder(nn.Module):
+    """Implements the basic unit of the decoder
+
+    Args:
+        d_model (int): The model dimensionality.
+        h (int): The number of heads.
+        p_dropout (float): The dropout ratio.
+        left_shift (int): The window size below the center for the slided MHA.
+        right_shift (int): The window size beyond the center for the
+        slided MHA.
+        max_steps (int): The maximum step allowed for the window to take for
+        the slided MHA.
+        hidden_size (int): the hidden size of the feed forward module.
+    """
+    def __init__(
+            self,
+            d_model: int,
+            h: int,
+            p_dropout: float,
+            left_shift: int,
+            right_shift: int,
+            max_steps: int,
+            hidden_size: int
+            ) -> None:
+        super().__init__()
+        # TODO: Add Masking here
+        self.mhsa = MultiHeadAtt(
+            d_model=d_model,
+            h=h,
+            p_dropout=p_dropout
+        )
+        self.add_and_norm_1 = AddAndNorm(d_model=d_model)
+        self.slided_mha = MultiHeadSlidingAtt(
+            left_shift=left_shift,
+            right_shift=right_shift,
+            max_steps=max_steps,
+            d_model=d_model,
+            h=h,
+            p_dropout=p_dropout
+        )
+        self.add_and_norm_2 = AddAndNorm(d_model=d_model)
+        self.ff = FeedForward(
+            d_model=d_model,
+            hidden_size=hidden_size,
+            p_dropout=p_dropout
+        )
+        self.add_and_norm_3 = AddAndNorm(d_model=d_model)
+
+    def forward(
+            self,
+            x: Tensor,
+            encoder_values: Tensor,
+            center: Tensor
+            ) -> Tuple[Tensor, Tensor, Tensor]:
+        """Pass the data into the decoder blocks which they are:
+        - MMHA
+        - ADD & NORM
+        - MHA
+        - ADD & NORM
+        - Feed Forward
+        - ADD & NORM
+
+        Args:
+            x (Tensor): The input tensor of shape [B, Td, d_model]
+            encoder_values (Tensor): The encoder results of shape
+            [B, Te, d_model]
+            center (Tensor): The center vectors for the slided window attention
+
+        Returns:
+            Tuple[Tensor, Tensor, Tensor]: a tuple of the results, the
+            attention weights and the center vector.
+        """
+        out = self.mhsa(x, x, x)
+        out_1 = self.add_and_norm_1(x, out)
+        att, out, center = self.slided_mha(
+            query=out_1, values=encoder_values, center=center
+        )
+        out = self.add_and_norm_2(out_1, out)
+        out_1 = self.ff(out)
+        out = self.add_and_norm_3(out_1, out)
+        return out, att, center
