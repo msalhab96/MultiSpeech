@@ -284,7 +284,7 @@ class Encoder(nn.Module):
         Returns:
             Tensor: The result out of the self attention of shape [B, M, d]
         """
-        out = self.mhsa(x, x, x)
+        _, out = self.mhsa(x, x, x)
         out = self.mhsa_add_and_norm(x, out)
         ff_out = self.ff(out)
         out = self.ff_add_and_norm(out, ff_out)
