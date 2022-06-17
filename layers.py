@@ -420,7 +420,7 @@ class MultiHeadSlidingAtt(nn.Module):
         length = center.shape[0]
         range_matrix = torch.zeros(
             length, self.window_size, dtype=torch.int64
-            )
+            ).to(center.device)
         range_matrix[:, 0] = torch.max(
             center + self.left_shift, range_matrix[:, 0]
             )
@@ -432,7 +432,9 @@ class MultiHeadSlidingAtt(nn.Module):
         batch_size = indices.shape[0]
         return torch.min(
             indices,
-            torch.ones(batch_size, dtype=torch.int64) * max_size
+            torch.ones(
+                batch_size, dtype=torch.int64
+                ).to(indices.device) * max_size
             )
 
     def _govern_center(self, center: Tensor, updated_center: Tensor) -> Tensor:
@@ -456,7 +458,7 @@ class MultiHeadSlidingAtt(nn.Module):
         [batch_size, _, d_model] = values.shape
         indices = torch.unsqueeze(indices, dim=1)
         indices = indices.repeat(1, d_model).view(batch_size, 1, d_model)
-        return torch.gather(values, 1, indices)
+        return torch.gather(values, 1, indices.to(values.device))
 
     def _get_values(
             self,
@@ -476,7 +478,7 @@ class MultiHeadSlidingAtt(nn.Module):
         [batch_size, max_length, d_model] = values.shape
         slice = torch.zeros(
             batch_size, self.window_size, d_model
-            )
+            ).to(values.device)
         for i in range(self.window_size):
             indices = self._slice_range_matrix(range_matrix, i)
             indices = self._govern_max_len(max_length - 1, indices)
@@ -496,15 +498,14 @@ class MultiHeadSlidingAtt(nn.Module):
             Tensor: The updated center vector.
         """
         att = att[:, -1, :]  # The last one of Ts, [B, 1, win_size]
-        print(att.shape)
         [bh, ws] = att.shape
         att = att.view(self.mha.h, bh // self.mha.h, ws)  # [h, B, win_size]
         att = att.sum(dim=0)  # [B, win_size]
+        range_matrix = range_matrix.to(att.device)
         new_center = range_matrix * att
         new_center = torch.sum(new_center, dim=-1)  # [B,]
         new_center = new_center / self.mha.h
         new_center = torch.floor(new_center).to(torch.int)
-        print(new_center)
         return new_center
 
     def forward(
@@ -524,7 +525,6 @@ class MultiHeadSlidingAtt(nn.Module):
         range_matrix = self._get_range_matrix(center)
         win_vals = self._get_values(values, range_matrix)
         att, out = self.mha(key=win_vals, query=query, value=win_vals)
-        print(att.shape)
         center = self._update_center(range_matrix, att)
         return att, out, center
 
@@ -601,7 +601,7 @@ class Decoder(nn.Module):
             Tuple[Tensor, Tensor, Tensor]: a tuple of the results, the
             attention weights and the center vector.
         """
-        out = self.mhsa(x, x, x)
+        _, out = self.mhsa(x, x, x)
         out_1 = self.add_and_norm_1(x, out)
         att, out, center = self.slided_mha(
             query=out_1, values=encoder_values, center=center
