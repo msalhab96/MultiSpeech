@@ -610,3 +610,34 @@ class Decoder(nn.Module):
         out_1 = self.ff(out)
         out = self.add_and_norm_3(out_1, out)
         return out, att, center
+
+
+class PredModule(nn.Module):
+    """Impelements the prediction module where it contains the Mel Linear and
+    the Stop Linear layers.
+
+    Args:
+        d_model (int): The model dimensionality.
+        n_mels (int): Number of mel filterbanks to be predicted.
+    """
+    def __init__(self, d_model: int, n_mels: int) -> None:
+        super().__init__()
+        self.mel_linear = nn.Linear(d_model, n_mels)
+        self.stop_linear = nn.Linear(d_model, 1)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x: Tensor) -> Tuple[Tensor, Tensor]:
+        """Passes the last decoder output through mel linear and stop linear
+
+        Args:
+            x (Tensor): The last decoder layer's output of shape
+            [B, Ts, d_model].
+
+        Returns:
+            Tuple[Tensor, Tensor]: A tuple of the predicted mels and the stop
+            prediction.
+        """
+        mels = self.mel_linear(x)
+        stop_props = self.stop_linear(x)
+        stop_props = self.sigmoid(stop_props)
+        return mels, stop_props
