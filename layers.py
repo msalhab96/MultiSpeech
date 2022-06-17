@@ -27,14 +27,14 @@ class SpeakerModule(nn.Module):
         self.soft_sign = nn.Softsign()
 
     def forward(self, x: Tensor) -> Tensor:
-        """Given x of shape [B, S] where S is a valid speaker id return
+        """Given x of shape [B, 1] of B valid speaker ids return
         the embedding for each speaker.
 
         Args:
             x (Tensor): The input to the embedding layer.
 
         Returns:
-            Tensor: The speakers' Embedding of shape [B, S, E].
+            Tensor: The speakers' Embedding of shape [B, 1, E].
         """
         out = self.emb(x)
         out = self.fc(out)
