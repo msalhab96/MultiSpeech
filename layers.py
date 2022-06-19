@@ -12,9 +12,9 @@ class SpeakerModule(nn.Module):
     Args:
         n_speakers (int): The number of speakers.
         emb_size (int): The embedding dimensionality of the embedding layer.
-        fc_size (int): The fully connected layer size..
+        d_model (int): The model dimensionality.
     """
-    def __init__(self, n_speakers: int, emb_size: int, fc_size: int) -> None:
+    def __init__(self, n_speakers: int, emb_size: int, d_model: int) -> None:
         super().__init__()
         self.emb = nn.Embedding(
             num_embeddings=n_speakers,
@@ -22,7 +22,7 @@ class SpeakerModule(nn.Module):
         )
         self.fc = nn.Linear(
             in_features=emb_size,
-            out_features=fc_size
+            out_features=d_model
         )
         self.soft_sign = nn.Softsign()
 
@@ -34,7 +34,7 @@ class SpeakerModule(nn.Module):
             x (Tensor): The input to the embedding layer.
 
         Returns:
-            Tensor: The speakers' Embedding of shape [B, 1, E].
+            Tensor: The speakers' Embedding of shape [B, 1, d_model].
         """
         out = self.emb(x)
         out = self.fc(out)
@@ -342,7 +342,22 @@ class PositionalEmbedding(nn.Module):
 
 
 class DecoderPrenet(nn.Module):
-    # TODO: add docstring
+    """Implements the decoder bottleneck module where the input is the
+    results are mels from 0 to s-1, the input will pass through the following
+    layers:
+    - Dense
+    - Relu + Dropout
+    - Dense
+    - Relu + Dropout
+    - Dense
+    - Relu
+
+    Args:
+        inp_size (int): The number of mels.
+        bottleneck_size (int): The decoder's bottleneck layer size.
+        d_model (int): The model dimensionality.
+        p_dropout (float): The dropout ratio.
+    """
     def __init__(
             self,
             inp_size: int,
