@@ -1,3 +1,4 @@
+from typing import List, Tuple
 import torch
 import torch.nn as nn
 from torch import Tensor
@@ -16,6 +17,18 @@ from utils import (
 
 
 class Model(nn.Module):
+    """Implements the MultiSpeech Model archticture
+
+    Args:
+        pos_emb_params (dic): The encoder's positional embedding parameters.
+        encoder_params (dic): The model's encoder parameters.
+        decoder_params (dic): The model's decoder parameters.
+        speaker_mod_params (dic): The speaker module parameters.
+        prenet_params (dic): The decoder's prenet/bottleneck parameters.
+        pred_params (dict): The prediction module parameters.
+        n_layers (int): The number of stacked encoders and decoders.
+        device (str): The device to map the Tensors to.
+    """
     def __init__(
             self,
             pos_emb_params: dict,
@@ -56,11 +69,24 @@ class Model(nn.Module):
             x: Tensor,
             speakers: Tensor,
             y: Tensor,
-            ):
+            ) -> Tuple[Tensor, Tensor, List[Tensor]]:
+        """Passes the input to the model's layers.
+
+        Args:
+            x (Tensor): The encoded text input of shpae [B, M].
+            speakers (Tensor): The corresoponding speaker embeddings of shape
+            [B, 1].
+            y (Tensor): The target tensor of shape [B, T, n_mdels].
+
+        Returns:
+            Tuple[Tensor, Tensor, List[Tensor]]: A tuple contains the mel,
+            stop prediction results and the list of all alignments.
+        """
+        # TODO: Add Teacher forcing
+        # TODO: Add Prediction function
         enc_inp = self.pos_emb(x)
         speaker_emb = self.speaker_mod(speakers)
         prenet_out = self.dec_prenet(y)
-        print(prenet_out.shape)
         dec_input = cat_speaker_emb(speaker_emb, prenet_out)
         batch_size, max_len, d_model = dec_input.shape
         dec_input = dec_input + get_positionals(
