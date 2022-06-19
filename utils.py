@@ -2,6 +2,7 @@ import math
 import torch
 from torch import Tensor
 from functools import lru_cache
+import json
 
 
 @lru_cache(maxsize=2)
@@ -34,3 +35,8 @@ def cat_speaker_emb(speaker_emb: Tensor, x: Tensor) -> Tensor:
         [B, M + 1, E]
     """
     return torch.cat([speaker_emb, x], dim=1)
+
+
+def save_json(file_path: str, data: dict):
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f)
