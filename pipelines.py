@@ -28,8 +28,10 @@ class AudioPipeline(IPipeline):
 
     def run(self, audio_path: Union[Path, str]) -> Tensor:
         x, sr = torchaudio.load(audio_path)
-        x = get_resampler(sr, self.sampling_rate)
-        x = x.permute(0, 2, 1)
+        x = get_resampler(sr, self.sampling_rate)(x)
+        x = self.mel_spec(x)
+        x = torch.squeeze(x)
+        x = x.permute(1, 0)
         return x
 
 
@@ -45,5 +47,5 @@ class TextPipeline(IPipeline):
         text = text.lower()
         text = text.strip()
         result = self.tokenizer.tokens2ids(text)
-        result.append(self.tokenizer.special_tokens.eos_token)
-        return torch.LongTensor([[result]])
+        result.append(self.tokenizer.special_tokens.eos_id)
+        return torch.LongTensor(result)
