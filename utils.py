@@ -3,6 +3,7 @@ import torch
 from torch import Tensor
 from functools import lru_cache
 import json
+import torchaudio
 
 
 @lru_cache(maxsize=2)
@@ -40,3 +41,11 @@ def cat_speaker_emb(speaker_emb: Tensor, x: Tensor) -> Tensor:
 def save_json(file_path: str, data: dict):
     with open(file_path, 'w', encoding='utf-8') as f:
         json.dump(data, f)
+
+
+@lru_cache(maxsize=2)
+def get_resampler(src_sr: int, target_sr: int):
+    return torchaudio.transforms.Resample(
+        orig_freq=src_sr,
+        new_freq=target_sr
+    )
