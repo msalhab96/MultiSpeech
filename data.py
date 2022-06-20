@@ -1,3 +1,4 @@
+import torch
 from typing import Union
 from torch.utils.data import Dataset
 from interfaces import IDataLoader, IPipeline, IPadder
@@ -65,10 +66,11 @@ class Data(Dataset):
         max_speech_len, max_text_len = self._get_max_len(idx)
         text = self.text_pipeline.run(text)
         speech = self.aud_pipeline.run(file_path)
-        speech_length = speech.shape[1]
+        speech_length = speech.shape[0]
         mask = [True] * speech_length
         if max_speech_len is not None:
             mask.extend([False] * (max_speech_len - speech_length))
             speech = self.aud_padder(speech)
-        # TODO: cast the data types of the returned values
+        mask = torch.BoolTensor(mask)
+        spk_id = torch.LongTensor([spk_id])
         return speech, speech_length, mask, text, spk_id
