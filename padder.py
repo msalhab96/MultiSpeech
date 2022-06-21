@@ -12,22 +12,20 @@ class TextPadder(IPadder):
         self.pad_id = pad_id
 
     def pad(self, x: Tensor, max_len: int) -> Tensor:
-        length = x.shape[1]
-        pad = torch.ones(1, max_len - length) * self.pad_id
-        return torch.cat([x, pad], dim=1)
+        length = x.shape[0]
+        pad = torch.ones(max_len - length) * self.pad_id
+        return torch.cat([x, pad], dim=0)
 
 
 class AudPadder(IPadder):
     def __init__(
             self,
             pad_val: int,
-            n_mels: int
             ) -> None:
         super().__init__()
-        self.n_mels = n_mels
         self.pad_val = pad_val
 
     def pad(self, x: Tensor, max_len: int) -> Tensor:
-        length = x.shape[1]
-        pad = torch.ones(1, 1, max_len - length) * self.pad_val
-        return torch.cat([x, pad], dim=1)
+        length, dim = x.shape
+        pad = torch.ones(max_len - length, dim) * self.pad_val
+        return torch.cat([x, pad], dim=0)

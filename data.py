@@ -39,7 +39,7 @@ class Data(Dataset):
     def process(self, data_loader: IDataLoader):
         data = data_loader.load().split('\n')
         data = [item.split(self.sep) for item in data]
-        data = sorted(data, key=lambda x: x[DURATION_ID])
+        data = sorted(data, key=lambda x: x[DURATION_ID], reverse=True)
         return data
 
     def __set_max_text_lens(self):
@@ -57,20 +57,26 @@ class Data(Dataset):
     def _get_max_len(self, idx: int) -> Union[None, int]:
         bucket_id = idx // self.batch_size
         if bucket_id >= len(self.max_speech_lens):
-            return None, self.max_text_lens[idx]
-        return self.max_speech_lens[bucket_id], self.max_text_lens[idx]
+            return None, self.max_text_lens[bucket_id] + 1
+        return (
+            self.max_speech_lens[bucket_id],
+            self.max_text_lens[bucket_id] + 1
+            )
 
     def __getitem__(self, idx: int):
-        [spk_id, file_path, text, _, ] = self.data[idx]
+        [spk_id, file_path, text, _] = self.data[idx]
         spk_id = int(spk_id)
         max_speech_len, max_text_len = self._get_max_len(idx)
         text = self.text_pipeline.run(text)
+        text = self.text_padder.pad(text, max_text_len)
         speech = self.aud_pipeline.run(file_path)
         speech_length = speech.shape[0]
         mask = [True] * speech_length
         if max_speech_len is not None:
             mask.extend([False] * (max_speech_len - speech_length))
-            speech = self.aud_padder(speech)
+            speech = self.aud_padder.pad(speech, max_speech_len)
+        else:
+            self.max_speech_lens.append(speech_length)
         mask = torch.BoolTensor(mask)
         spk_id = torch.LongTensor([spk_id])
         return speech, speech_length, mask, text, spk_id
