@@ -13,7 +13,7 @@ class TextPadder(IPadder):
 
     def pad(self, x: Tensor, max_len: int) -> Tensor:
         length = x.shape[0]
-        pad = torch.ones(max_len - length) * self.pad_id
+        pad = torch.ones(max_len - length, dtype=torch.int) * self.pad_id
         return torch.cat([x, pad], dim=0)
 
 
@@ -27,5 +27,5 @@ class AudPadder(IPadder):
 
     def pad(self, x: Tensor, max_len: int) -> Tensor:
         length, dim = x.shape
-        pad = torch.ones(max_len - length, dim) * self.pad_val
+        pad = torch.ones(max_len - length, dim, dtype=torch.int) * self.pad_val
         return torch.cat([x, pad], dim=0)
