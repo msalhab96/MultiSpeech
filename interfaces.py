@@ -63,3 +63,10 @@ class IPadder(ABC):
     @abstractmethod
     def pad():
         pass
+
+
+class ITrainer(ABC):
+
+    @abstractmethod
+    def fit():
+        pass
