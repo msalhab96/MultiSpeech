@@ -44,25 +44,25 @@ class Model(nn.Module):
         self.device = device
         self.n_layers = n_layers
         self.enc_layers = nn.ModuleList([
-            Encoder(**encoder_params)
+            Encoder(**encoder_params).to(device)
             for _ in range(n_layers)
             ])
         self.dec_layers = nn.ModuleList([
-            Decoder(**decoder_params)
+            Decoder(**decoder_params).to(device)
             for _ in range(n_layers)
         ])
         self.dec_prenet = DecoderPrenet(
             **prenet_params
-        )
+        ).to(device)
         self.pos_emb = PositionalEmbedding(
             **pos_emb_params
-            )
+            ).to(device)
         self.speaker_mod = SpeakerModule(
             **speaker_mod_params
-        )
+        ).to(device)
         self.pred_mod = PredModule(
             **pred_params
-        )
+        ).to(device)
 
     def forward(
             self,

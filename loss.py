@@ -76,6 +76,8 @@ class Loss(torch.nn.Module):
             mels_target: Tensor,
             alignments: Tensor
             ) -> Tensor:
+        mask = mask.to(mels_pred.device)
+        mels_target = mels_target.to(mels_pred.device)
         mel_loss = self.l1_loss(
             mels_pred * mask.unsqueeze(dim=-1), mels_target
             )
