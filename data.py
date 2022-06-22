@@ -1,6 +1,6 @@
 import torch
 from typing import Union
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 from interfaces import IDataLoader, IPipeline, IPadder
 
 
@@ -80,3 +80,27 @@ class Data(Dataset):
         mask = torch.BoolTensor(mask)
         spk_id = torch.LongTensor([spk_id])
         return speech, speech_length, mask, text, spk_id
+
+
+def get_batch_loader(
+        data_loader: IDataLoader,
+        aud_pipeline: IPipeline,
+        text_pipeline: IPipeline,
+        aud_padder: IPadder,
+        text_padder: IPadder,
+        batch_size: int,
+        sep: str
+        ):
+    return DataLoader(
+        Data(
+            data_loader=data_loader,
+            aud_pipeline=aud_pipeline,
+            text_pipeline=text_pipeline,
+            aud_padder=aud_padder,
+            text_padder=text_padder,
+            batch_size=batch_size,
+            sep=sep
+        ),
+        batch_size=batch_size,
+        shuffle=False
+    )
