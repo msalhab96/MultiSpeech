@@ -2,7 +2,7 @@ import torch
 import torchaudio
 from torch import Tensor
 from pathlib import Path
-from typing import Union
+from typing import Tuple, Union
 from utils import get_resampler
 from interfaces import ITokenizer, IPipeline
 
@@ -49,3 +49,16 @@ class TextPipeline(IPipeline):
         result = self.tokenizer.tokens2ids(text)
         result.append(self.tokenizer.special_tokens.eos_id)
         return torch.LongTensor(result)
+
+
+def get_audio_pipeline(aud_params):
+    return AudioPipeline(**aud_params)
+
+
+def get_pipelines(
+        tokenizer: ITokenizer, aud_params: dict
+        ) -> Tuple[IPipeline, IPipeline]:
+    return (
+        get_audio_pipeline(aud_params),
+        TextPipeline(tokenizer=tokenizer)
+    )

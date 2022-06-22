@@ -1,3 +1,4 @@
+from typing import Tuple
 from interfaces import IPadder
 from torch import Tensor
 import torch
@@ -29,3 +30,12 @@ class AudPadder(IPadder):
         length, dim = x.shape
         pad = torch.ones(max_len - length, dim, dtype=torch.int) * self.pad_val
         return torch.cat([x, pad], dim=0)
+
+
+def get_padders(
+        aud_pad_val: int, text_pad_val: int
+        ) -> Tuple[IPadder, IPadder]:
+    return (
+        TextPadder(text_pad_val),
+        AudPadder(aud_pad_val)
+        )
